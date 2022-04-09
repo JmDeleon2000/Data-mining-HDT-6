@@ -33,78 +33,96 @@ library(FeatureImpCluster) #Para revisar la importancia de las variables en los 
 library(pheatmap) #Para hacer mapa de calor
 ```
 
+```{r}
+
+
+house <- read.csv("./train.csv", stringsAsFactors = F)
+quant <- quantile(house$SalePric)
+```
+
 
 ```{r}
 set.seed(123)
 #se toman las variables que se cree predicen propiamente el precio de la casa y el precio real de la casa.
 #luego se reemplaza la columna del precio de la casa por una que lo clasifica como economica, intermedio o cara dependiendo de los percentiles.
 data <- fread("./train.csv", select = c("OverallQual","OverallCond" ,"GrLivArea", "BedroomAbvGr", "TotRmsAbvGrd", "GarageCars", "SalePrice", "YearBuilt", "LotArea", "LotFrontage"))
-data <- data %>% mutate(PriceRange = if_else(quant["0%"] <= SalePrice & SalePrice < quant["25%"], "Economica", 
-                                              if_else(quant["25%"] <= SalePrice & SalePrice < quant["50%"], "Intermedia", "Cara") ))
-data$SalePrice <- NULL
+data <- data %>% mutate(Economica = if_else(quant["0%"] <= SalePrice & SalePrice < quant["25%"], 1,0))
+data <- data %>% mutate(Intermedia = if_else(quant["25%"] <= SalePrice & SalePrice < quant["50%"], 1,0))
+data <- data %>% mutate(Cara = if_else(quant["50%"] <= SalePrice, 1,0))
 
-data$LotFrontage[is.na(data$LotFrontage)]<-0.0
+data$OverallQual[data$OverallQual == 'NAN'] <- 0
 
-trainRowsNumber <- sample(1:nrow(data), 0.7*nrow(data))
-train<-data[trainRowsNumber,]
-test<-data[-trainRowsNumber,]
-arbolModelo <- rpart(PriceRange~.,data,method = "class")
-rpart.plot(arbolModelo)
-```
 
-```{r}
-save(train,test,arbolModelo, file = "Variables.RData")
-load("Variables.RData")
-dt_model<-rpart(PriceRange~., train,method = "class")
-plot(dt_model);text(dt_model)
-prp(dt_model)
-rpart.plot(dt_model)
-```
 
-```{r}
-head(test)
-prediccion <- predict(dt_model, newdata = test)
-```
-```{r}
-#se obtiene la matriz de confusión para el árbol de clasificación
-#como se puede observar, nada el modelo tiene una Accuracy del 80% esto es muy bueno, ya que es preciso sin mostrar tendencia al overfitting.
-train$PriceRange=factor(train$PriceRange)
-test$PriceRange=factor(test$PriceRange)
-
-predicted_Price_Range<-apply(prediccion, 1, function(x) colnames(prediccion)[which.max(x)])
-test$prediccion<-predicted_Price_Range
-
-cfm<-confusionMatrix(as.factor(test$prediccion), test$PriceRange)
-cfm
+data
 ```
 ```{r}
 
-ct<-trainControl(method = "cv",train, number=10, verboseIter=T)
-modelorf<-train(PriceRange~., data=train, method="rpart", trControl = ct)
 
-prediccionADVC<-predict(modelorf,newdata = test)
-test$predADVC<-prediccionADVC
+#-----CORRELACIONES------#
+# Correlación de 80.98%
+cor(data$OverallQual,data$Cara, method = "spearman")
+# Correlación de 69.07%
+cor(data$GarageCars,data$Cara, method = "spearman")
+# Correlación de 73.13%
+cor(data$GrLivArea,data$Cara, method = "spearman")
+# Correlación de 65.26%
+cor(data$YearBuilt,data$Cara, method = "spearman")
+```
+
+```{r}
+
+corte <- sample(nrow(data),nrow(data)*0.7)
+train<-data[corte,]
+test<-data[-corte,]
 
 
-cfmCaret <- confusionMatrix(test$predADVC, test$PriceRange)
-cfmCaret
+```
+
+```{r}
+modelo<-glm(train$Cara~., data = train[,c(1,3,6,8)], family = binomial(), maxit=100)
 ```
 ```{r}
-rpart.plot(modelorf$finalModel)
+pred<-predict(modelo,newdata = test[,c(1,3,6,8)], type = "response")
+prediccion<-ifelse(pred>=0.5,1,0)
+confusionMatrix(as.factor(test$Cara),as.factor(prediccion))
 ```
 
 
 ```{r}
-train$PriceRange=factor(train$PriceRange)
-test$PriceRange=factor(test$PriceRange)
-modelRandomF<-randomForest(PriceRange~.,data=train, na.action = na.exclude, method = "class")
-PredictionRF<-predict(modelRandomF,newdata = test)
-fulltest<-test
-fulltest$predRF<-PredictionRF
-cfmRandomForest <- confusionMatrix(fulltest$predRF, fulltest$PriceRange)
-cfmRandomForest
+pred<-predict(modelo,newdata = train[,c(1,3,6,8)], type = "response")
+prediccion<-ifelse(pred>=0.5,1,0)
+confusionMatrix(as.factor(train$Cara),as.factor(prediccion))
 ```
 ```{r}
-plot(modelRandomF)
+#se concluye que no hay overfitting dado que no existe una discrepancia significativa entre la precisión del modelo con el set de test y el de train
 ```
 
+```{r}
+modelo2<-glm(train$Intermedia~., data = train[,c(1,3,6,8)], family = binomial(), maxit=100)
+```
+```{r}
+pred<-predict(modelo2,newdata = test[,c(1,3,6,8)], type = "response")
+prediccion<-ifelse(pred>=0.5,1,0)
+confusionMatrix(as.factor(test$Intermedia),as.factor(prediccion))
+```
+
+```{r}
+pred<-predict(modelo2,newdata = train[,c(1,3,6,8)], type = "response")
+prediccion<-ifelse(pred>=0.5,1,0)
+confusionMatrix(as.factor(train$Intermedia),as.factor(prediccion))
+```
+```{r}
+modelo3<-glm(train$Economica~., data = train[,c(1,3,6,8)], family = binomial(), maxit=100)
+```
+```{r}
+pred<-predict(modelo3,newdata = test[,c(1,3,6,8)], type = "response")
+prediccion<-ifelse(pred>=0.5,1,0)
+confusionMatrix(as.factor(test$Economica),as.factor(prediccion))
+```
+
+```{r}
+pred<-predict(modelo3,newdata = train[,c(1,3,6,8)], type = "response")
+prediccion<-ifelse(pred>=0.5,1,0)
+confusionMatrix(as.factor(train$Economica),as.factor(prediccion))
+```
